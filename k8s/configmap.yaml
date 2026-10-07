@@ -1,0 +1,15 @@
+# Backend and model-pull Job settings (same values as docker-compose.yml).
+# Not mounted into the Ollama pod: there OLLAMA_HOST is the server's bind
+# address, and http://ollama:11434 would break it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: diff-visualizer
+  labels:
+    app.kubernetes.io/part-of: diff-visualizer
+data:
+  OLLAMA_HOST: "http://ollama:11434"
+  OLLAMA_MODEL: "qwen2.5-coder:1.5b"
+  PORT: "4000"
+  DB_PATH: "/app/data/data.sqlite"

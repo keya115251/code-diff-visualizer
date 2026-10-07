@@ -1,0 +1,56 @@
+# One-off Job that pulls the model into the ollama-data PVC through the
+# ollama Service; replaces pull-ollama-model.sh (which used docker exec).
+# Re-running it is harmless: ollama pull is a no-op if the model is present.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ollama-model-pull
+  namespace: diff-visualizer
+  labels:
+    app: ollama-model-pull
+    app.kubernetes.io/part-of: diff-visualizer
+spec:
+  # Retries the pod on failure (e.g. a network drop mid-download)
+  backoffLimit: 4
+  # Hard stop so a stuck download can't hang forever
+  activeDeadlineSeconds: 1800
+  # A Job's pod template is immutable. Deleting the Job 10 minutes after it
+  # finishes lets a later kubectl apply (e.g. from Jenkins) create it again
+  # instead of erroring.
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: ollama-model-pull
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: pull
+          # Same image as the server, used only as the ollama CLI client.
+          # Runs as root like the server image (see ollama.yaml).
+          image: ollama/ollama:0.40.0
+          # Reuses the ConfigMap: here OLLAMA_HOST=http://ollama:11434 is
+          # correct, because the CLI reads it as the server to talk to.
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          command: ["/bin/sh", "-c"]
+          # The Job can start before the Ollama pod is ready, so wait until
+          # the API answers, then pull.
+          args:
+            - |
+              echo "Waiting for Ollama at $OLLAMA_HOST..."
+              until ollama list > /dev/null 2>&1; do
+                echo "Ollama not reachable yet, retrying in 5s"
+                sleep 5
+              done
+              echo "Pulling model: $OLLAMA_MODEL"
+              ollama pull "$OLLAMA_MODEL"
+              echo "Done. Model is ready."
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

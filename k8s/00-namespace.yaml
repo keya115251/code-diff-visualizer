@@ -1,0 +1,8 @@
+# All app resources live in their own namespace so the whole stack can be
+# inspected or torn down in one go (kubectl delete namespace diff-visualizer).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: diff-visualizer
+  labels:
+    app.kubernetes.io/part-of: diff-visualizer

@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: diff-visualizer
+  labels:
+    app: frontend
+    app.kubernetes.io/part-of: diff-visualizer
+spec:
+  # Stateless (static files + proxy), so it can scale and roll without downtime
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      securityContext:
+        # Matches the "nginx" user in nginxinc/nginx-unprivileged
+        runAsUser: 101
+        runAsGroup: 101
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontend
+          image: keya115251/diff-visualizer-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            # 8080 because a non-root process can't bind ports below 1024
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          # Probes hit / (static index.html), not /api, so frontend health
+          # doesn't depend on the backend being up.
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: diff-visualizer
+  labels:
+    app: frontend
+    app.kubernetes.io/part-of: diff-visualizer
+spec:
+  # NodePort exposes the UI at http://localhost:30080 on Docker Desktop
+  # without needing an Ingress controller.
+  type: NodePort
+  selector:
+    app: frontend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30080

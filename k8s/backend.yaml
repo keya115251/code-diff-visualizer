@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: diff-visualizer
+  labels:
+    app: backend
+    app.kubernetes.io/part-of: diff-visualizer
+spec:
+  # Exactly one replica with Recreate: SQLite on a ReadWriteOnce PVC supports a
+  # single writer, and a rolling update would briefly need two pods on the volume.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      securityContext:
+        # Matches the "node" user baked into the image (see backend/Dockerfile)
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        # Makes the mounted PVC group-writable by gid 1000, so SQLite can create
+        # its file without the root-owned-volume problem seen with compose.
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: backend
+          image: keya115251/diff-visualizer-backend:latest
+          # Always is already the default for :latest; explicit so a restarted
+          # pod is known to pull the newest push.
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 4000
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: backend-data
+              mountPath: /app/data
+          # /api/health doesn't call Ollama, so a slow or missing model never
+          # makes the backend look unhealthy (explanations fall back gracefully).
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: backend-data
+          persistentVolumeClaim:
+            claimName: backend-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # Name must stay "backend": frontend/nginx.conf proxies to http://backend:4000
+  name: backend
+  namespace: diff-visualizer
+  labels:
+    app: backend
+    app.kubernetes.io/part-of: diff-visualizer
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http

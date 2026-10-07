@@ -1,0 +1,31 @@
+# ReadWriteOnce: each volume is mounted by a single pod (one backend, one
+# Ollama). No storageClassName, so the cluster default class is used
+# (hostpath on Docker Desktop).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backend-data
+  namespace: diff-visualizer
+  labels:
+    app.kubernetes.io/part-of: diff-visualizer
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Holds downloaded models, so the model pull survives pod restarts.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-data
+  namespace: diff-visualizer
+  labels:
+    app.kubernetes.io/part-of: diff-visualizer
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
