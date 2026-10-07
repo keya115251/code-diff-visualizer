@@ -97,8 +97,27 @@ pipeline {
 
         stage('Deploy') {
             steps {
-                sh 'docker-compose down || true'
-                sh 'docker-compose up -d --build'
+                // The kubeconfig is a Jenkins secret file; kubectl reads it from $KUBECONFIG,
+                // so its path and contents never appear in the build log.
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    // Render copies of k8s/ with the backend/frontend images pinned to this
+                    // build's tag, so one apply gives one rollout and never reverts to :latest.
+                    // The manifests in the repo stay untouched.
+                    sh """
+                        set -eu
+                        rm -rf .k8s-rendered
+                        cp -r k8s .k8s-rendered
+                        for img in ${BACKEND_IMAGE} ${FRONTEND_IMAGE}; do
+                            sed -i "s#image: ${DOCKERHUB_REPO}/\$img:latest#image: ${DOCKERHUB_REPO}/\$img:${env.BUILD_NUMBER}#" .k8s-rendered/*.yaml
+                            grep -q "image: ${DOCKERHUB_REPO}/\$img:${env.BUILD_NUMBER}" .k8s-rendered/*.yaml
+                        done
+                        kubectl apply -f .k8s-rendered/00-namespace.yaml
+                        kubectl apply -f .k8s-rendered/
+                        kubectl rollout status deployment/backend -n diff-visualizer --timeout=300s
+                        kubectl rollout status deployment/frontend -n diff-visualizer --timeout=300s
+                        kubectl get pods,svc -n diff-visualizer
+                    """
+                }
             }
         }
     }
