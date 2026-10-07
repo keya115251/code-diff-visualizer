@@ -1,17 +1,35 @@
-FROM node:20-slim
+# Stage 1: install production dependencies.
+# better-sqlite3 is a native module; build tools are only needed here as a
+# fallback when no prebuilt binary matches, and never reach the final image.
+FROM node:20-slim AS deps
 
 WORKDIR /app
 
-# Install deps first for better layer caching
-COPY package*.json ./
-RUN npm install --omit=dev
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
 
-# Copy source
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+# Stage 2: minimal runtime image, running as the unprivileged "node" user
+FROM node:20-slim AS runtime
+
+ENV NODE_ENV=production \
+    PORT=4000 \
+    DB_PATH=/app/data/data.sqlite
+
+WORKDIR /app
+
+# Copy dependencies and source owned by root (read-only to the app user)
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json ./
 COPY src ./src
 
-# Data directory for SQLite (mounted as a volume in docker-compose)
-RUN mkdir -p /app/data
-ENV DB_PATH=/app/data/data.sqlite
+# Only the data directory is writable by the app user (uid 1000)
+RUN mkdir -p /app/data && chown node:node /app/data
+
+USER node
 
 EXPOSE 4000
 
