@@ -57,7 +57,10 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>Code Diff Visualizer</h1>
+        <h1>
+          <span className="glyph-minus">−</span>
+          <span className="glyph-plus">+</span>&nbsp;Diff Visualizer
+        </h1>
         <p className="subtitle">Paste two snippets, see what changed, and why.</p>
       </header>
 
